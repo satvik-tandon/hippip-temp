@@ -53,12 +53,14 @@
 !/scripts/shortest_paths/
 !/scripts/shortest_paths/*.py
 
-# Split db_pred/kgraph launchers; the published split remains for a later commit.
+# Split launchers for kgraph, db_pred and db_published.
 !/severus_prod/
 !/severus_prod/db_k_graph/
 !/severus_prod/db_k_graph/*.sh
 !/severus_prod/db_pred/
 !/severus_prod/db_pred/*.sh
+!/severus_prod/db_published/
+!/severus_prod/db_published/*.sh
 
 # Validation code and the prepared db_pred encoding migration.
 !/severus_prod/tests/
