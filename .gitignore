@@ -62,9 +62,12 @@
 !/severus_prod/db_published/
 !/severus_prod/db_published/*.sh
 
-# Validation code and the prepared db_pred encoding migration.
-!/severus_prod/tests/
-!/severus_prod/tests/*.py
+# satvvik: Track refresh code while keeping local test files outside Git.
+!/severus_prod/main_refresh/
+!/severus_prod/main_refresh/*.py
+/severus_prod/tests/
+
+# Prepared db_pred encoding migration.
 !/severus_prod/migrations/
 !/severus_prod/migrations/utf8mb4_db_pred*.sql
 

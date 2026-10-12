@@ -7,6 +7,8 @@
 # (b). I have changed dbstructure.sql and commented out the part where tables were being dropped. (see next point about truncation)
 # (c). I have added truncated function which truncates the tables since dbstructure is not deleting the existing tables anymore.>
 
+# satvvik: Preserve the original rebuild for comparison; normal runs use the refresh entry point.
+legacy_main_workflow() {
 #!/bin/bash
 
 set -Eeuo pipefail
@@ -451,3 +453,14 @@ The data has been successfully pushed to the $PRODUCTION_DB database. Thank you 
 Best regards,  
 Your Hippip Script  
 EOF
+
+}
+
+# satvvik: Launch the shared refresh with this workflow's paths, logs and checkpoints.
+main_refresh_workflow() {
+    local workflow_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local project_root="${HIPPIP_ROOT:-/data/Projects/Hippip}"
+    exec python3 "$project_root/severus_prod/main_refresh/update.py" --root "$project_root" --workflow "$workflow_dir" "$@"
+}
+
+main_refresh_workflow "$@"
