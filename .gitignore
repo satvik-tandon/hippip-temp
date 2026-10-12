@@ -1,4 +1,4 @@
-# Repository scope: predicted/published workflows and shared code/configuration dependencies.
+# Repository scope: database workflows and shared code/configuration dependencies.
 # Ignore everything by default; extend this allowlist when adding workflow code.
 *
 !/.gitignore
@@ -6,11 +6,12 @@
 !/update_db_pred.sh
 !/update_db_published.sh
 
-# Database schema and interaction sources for the predicted/published workflows.
+# Database schema and interaction sources for the database workflows.
 !/config/
 !/config/dbstructure.sql
 !/config/interaction_sources_pred.json
 !/config/interaction_sources_published_pred.json
+!/config/interaction_sources_kgraph.json
 
 # Main-stage imports: keep Perl modules as well as Python and shell scripts.
 !/scripts/
@@ -52,8 +53,10 @@
 !/scripts/shortest_paths/
 !/scripts/shortest_paths/*.py
 
-# Only the db_pred launchers; leave db_published and db_k_graph out of this repo.
+# Split db_pred/kgraph launchers; the published split remains for a later commit.
 !/severus_prod/
+!/severus_prod/db_k_graph/
+!/severus_prod/db_k_graph/*.sh
 !/severus_prod/db_pred/
 !/severus_prod/db_pred/*.sh
 

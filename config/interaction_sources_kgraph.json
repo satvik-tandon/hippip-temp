@@ -1,0 +1,14 @@
+[
+	{
+		"filename": "/data01/backup/rawfiles/latest/BIOGRID-ALL.mitab.txt",
+		"databasename": "BioGRID",
+		"url": "http://thebiogrid.org/",
+		"fileformat": "mitab"
+	},
+	{
+		"filename": "/data01/backup/rawfiles/hprd/HPRD_SINGLE_PSIMI_041210.xml",
+		"databasename": "HPRD",
+		"url": "http://www.hprd.org/",
+		"fileformat": "psimi"
+	}
+]
