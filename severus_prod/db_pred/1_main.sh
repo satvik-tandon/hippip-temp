@@ -266,7 +266,9 @@ SOURCE_FILES=(
     # satvvik: ncbi link returns a 404, no longer valid (11/2025)
     # "https://www.ebi.ac.uk/gwas/api/search/downloads/full"
     "https://ftp.ebi.ac.uk/pub/databases/gwas/releases/latest/gwas-catalog-associations-full.zip"
-    "http://ontologies.berkeleybop.org/mi.obo"
+    # Legacy PSI-MI URL returned HTTP 403 on 2026-10-11.
+    # "http://ontologies.berkeleybop.org/mi.obo"
+    "https://purl.obolibrary.org/obo/mi.obo"
     "https://ftp.ncbi.nih.gov/pub/HomoloGene/last-archive/homologene.data"
     "https://purl.obolibrary.org/obo/go/go-basic.obo" #satvvik added this link for go enrichment
 )
