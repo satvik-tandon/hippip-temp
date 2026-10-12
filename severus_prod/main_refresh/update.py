@@ -60,7 +60,9 @@ def connect(settings, database=None):
 def bootstrap(conn, database, schema_path):
     cursor = conn.cursor()
     try:
-        cursor.execute('CREATE DATABASE IF NOT EXISTS ' + quote(database))
+        # satvvik: Match the schema's utf8mb4 defaults when creating a database.
+        cursor.execute('CREATE DATABASE IF NOT EXISTS ' + quote(database)
+                       + ' CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci')
         cursor.execute('USE ' + quote(database))
         cursor.execute('SELECT @@SESSION.sql_mode')
         mode = cursor.fetchone()[0]
