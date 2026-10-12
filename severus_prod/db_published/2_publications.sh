@@ -17,7 +17,8 @@ if [[ ${1:-} == --help || ${1:-} == -h ]]; then
 fi
 
 if [[ -z ${PRODUCTION_DB:-} ]]; then
-  read -r -p "MySQL Database: " PRODUCTION_DB
+  read -r -p "MySQL Database [db_published]: " PRODUCTION_DB
+  PRODUCTION_DB="${PRODUCTION_DB:-db_published}"
 fi
 if [[ -z ${DB_USER:-} ]]; then
   read -r -p "MySQL Username: " DB_USER
