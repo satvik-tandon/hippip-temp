@@ -1,14 +1,16 @@
-# Repository scope: db_pred and its shared code/configuration dependencies.
+# Repository scope: predicted/published workflows and shared code/configuration dependencies.
 # Ignore everything by default; extend this allowlist when adding workflow code.
 *
 !/.gitignore
 !/requirements.txt
 !/update_db_pred.sh
+!/update_db_published.sh
 
-# Database schema and interaction sources used by db_pred/1_main.sh.
+# Database schema and interaction sources for the predicted/published workflows.
 !/config/
 !/config/dbstructure.sql
 !/config/interaction_sources_pred.json
+!/config/interaction_sources_published_pred.json
 
 # Main-stage imports: keep Perl modules as well as Python and shell scripts.
 !/scripts/
