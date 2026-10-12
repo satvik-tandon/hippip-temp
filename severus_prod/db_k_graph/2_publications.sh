@@ -28,8 +28,10 @@ if [[ ! -v DB_PASS ]]; then
 fi
 export PRODUCTION_DB DB_USER DB_PASS
 
-mkdir -p -- "$PUBLICATION_STATE_DIR/logs"
-LOG_FILE=$(mktemp "$PUBLICATION_STATE_DIR/logs/publications-$(date +%Y%m%d-%H%M%S)-XXXXXX.log")
+# Keep logs with the selected workflow even when checkpoints are shared.
+PUBLICATION_LOG_DIR="${PUBLICATION_LOG_DIR:-$SCRIPT_DIR/publication_state/logs}"
+mkdir -p -- "$PUBLICATION_LOG_DIR"
+LOG_FILE=$(mktemp "$PUBLICATION_LOG_DIR/publications-$(date +%Y%m%d-%H%M%S)-XXXXXX.log")
 
 send_notice() {
   local outcome="$1"

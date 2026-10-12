@@ -555,11 +555,13 @@ CREATE TABLE IF NOT EXISTS `publication2publications` (
 CREATE TABLE IF NOT EXISTS `publications` (
   `id` bigint(20) unsigned NOT NULL,
   `title` varchar(255) NOT NULL DEFAULT '',
-  `citation` int(10) unsigned NOT NULL DEFAULT '0',
+  `citation` int(10) unsigned DEFAULT NULL,
   `citation5` int(10) unsigned NOT NULL DEFAULT '0',
   `pubdate` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
   `journal` varchar(255) NOT NULL DEFAULT '',
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `citation_source` varchar(32) DEFAULT NULL,
+  `citation_checked_at` datetime(6) DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;

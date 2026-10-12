@@ -34,13 +34,14 @@ import mysql.connector
 LOG = logging.getLogger("publications")
 EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 LINK_NAME = "pubmed_pubmed_citedin"
-STAGES = ("known_articles", "known_citations", "citing_articles")
+STAGES = ("known_articles", "known_citations", "citing_articles", "citation_counts")
 POSTPONED = 75
 
 
 # 1. Original publication workflow, with the later parsing and database fixes.
 # These functions retain the original responsibilities, not untouched source.
 # Flow: known article metadata -> incoming citation links -> missing citing metadata.
+# Added final stage: verified counts for the remaining publication rows.
 
 
 def getKnownPMIDs(conn):
@@ -78,6 +79,7 @@ class Article:
     journal: object
     pubdate: object
     authors: object
+    # Retained as reference metadata only; never written to publications.citation.
     refcount: object
 
 
@@ -151,7 +153,7 @@ def write_articles(cursor, articles):
         # Missing optional upstream fields preserve existing data.
         fields = {"id": article.pmid, "title": column_text(article.title, article.pmid, "title"),
                   "journal": column_text(article.journal, article.pmid, "journal"),
-                  "pubdate": article.pubdate, "citation": article.refcount}
+                  "pubdate": article.pubdate}
         fields = {key: value for key, value in fields.items() if value is not None}
         columns = list(fields)
         updates = ["%s=%%s" % name for name in columns if name != "id"]
@@ -170,11 +172,13 @@ def write_articles(cursor, articles):
 
 def write_citations(cursor, citations):
     for cited_id, citing_ids in citations.items():
+        citing_ids = normalize_pmids(citing_ids)
         cursor.execute("DELETE FROM publication2publications WHERE cited_id=%s", (cited_id,))
         if citing_ids:
             cursor.executemany("""
                 INSERT INTO publication2publications (cited_id,citing_id) VALUES (%s,%s)
             """, [(cited_id, citing_id) for citing_id in citing_ids])
+    write_citation_counts(cursor, citations)
 
 
 def argument_parser(stage=None):
@@ -246,6 +250,9 @@ def cli(stage=None, argv=None):
             client = ApiClient(key, options.email, options.tool, window, rate=options.rate,
                                timeout=options.timeout, attempts=options.attempts)
             stages = STAGES if options.stage == "all" else (options.stage,)
+            if options.stage == "citing_articles":
+                stages += ("citation_counts",)
+            prepare_citation_schema(conn)
             checkpoint = Checkpoint(state_dir / ("%s-%s.json" % (token, options.stage)))
             Runner(conn, client, checkpoint, identity, stages, options.summary_batch_size,
                    options.citation_batch_size, options.workers).run()
@@ -376,7 +383,11 @@ def commit_batch(conn, stage, result):
     cursor = conn.cursor()
     try:
         if stage == "known_citations":
+            if getattr(result, "articles", None) is not None:
+                write_articles(cursor, result.articles)
             write_citations(cursor, result)
+        elif stage == "citation_counts":
+            write_citation_counts(cursor, result)
         else:
             write_articles(cursor, result)
         conn.commit()
@@ -524,6 +535,8 @@ class ApiClient:
             self.stopped.wait(min(0.1, end - time.monotonic()))
 
     def fetch(self, stage, pmids):
+        if stage == "citation_counts":
+            return fetch_verified_citations(self, pmids)
         endpoint = "elink" if stage == "known_citations" else "esummary"
         params = [("retmode", "xml"), ("tool", self.tool), ("email", self.email),
                   ("api_key", self.api_key)]
@@ -603,7 +616,7 @@ class Checkpoint:
             return json.load(handle)
 
     def worklist_path(self, name):
-        if name not in ("known", "citing"):
+        if name not in ("known", "citing", "counts"):
             raise UpdateError("Invalid checkpoint worklist name")
         return self.path.with_name(self.path.stem + "-" + name + "-pmids.json")
 
@@ -636,6 +649,133 @@ class Checkpoint:
                 os.unlink(name)
 
 
+# Citation-count correction helpers added to the original workflow.
+# Counts describe NCBI's incoming PMID links, not a complete literature census.
+CITATION_SOURCE = "ncbi_pubmed_citedin"
+CHECKPOINT_VERSION = 2
+LEGACY_STAGES = ("known_articles", "known_citations", "citing_articles")
+
+
+class CitationBatch(dict):
+    def __init__(self, citations, unavailable=None, articles=None):
+        super().__init__(citations)
+        self.unavailable = unavailable or {}
+        self.articles = articles
+
+
+def prepare_citation_schema(conn):
+    """Migrate legacy reference counts to unknown; normal runs only, never --check-config."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='publications'
+              AND COLUMN_NAME IN ('citation','citation_source','citation_checked_at')
+        """)
+        columns = {row[0]: row[1:] for row in cursor.fetchall()}
+        citation = columns.get("citation")
+        if citation is None or not re.fullmatch(r"int(?:\(\d+\))? unsigned", citation[0].lower()):
+            raise UpdateError("publications.citation must be an unsigned INT")
+        changes = []
+        if citation[1] != "YES" or citation[2] is not None:
+            changes.append("MODIFY COLUMN citation INT UNSIGNED NULL DEFAULT NULL")
+        if "citation_source" not in columns:
+            changes.append("ADD COLUMN citation_source VARCHAR(32) NULL DEFAULT NULL")
+        if "citation_checked_at" not in columns:
+            changes.append("ADD COLUMN citation_checked_at DATETIME(6) NULL DEFAULT NULL")
+        if changes:
+            LOG.info("Preparing citation columns; counts without verification will become unknown")
+            # The legacy pubdate default is zero. Permit that unchanged default
+            # only for this DDL, then restore the original session SQL mode.
+            cursor.execute("SELECT @@SESSION.sql_mode")
+            sql_mode = cursor.fetchone()[0]
+            ddl_mode = ",".join(mode for mode in sql_mode.split(",")
+                                if mode not in {"NO_ZERO_DATE", "NO_ZERO_IN_DATE"})
+            try:
+                set_citation_ddl_mode(cursor, ddl_mode)
+                cursor.execute("ALTER TABLE publications " + ", ".join(changes))
+            finally:
+                set_citation_ddl_mode(cursor, sql_mode)
+        cursor.execute("""
+            UPDATE publications SET citation=NULL
+            WHERE citation IS NOT NULL
+              AND (citation_source IS NULL OR citation_checked_at IS NULL)
+        """)
+        cleared = cursor.rowcount
+        conn.commit()
+        if cleared:
+            LOG.info("Marked %d unverified legacy reference counts unknown pending ELink retrieval", cleared)
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+
+
+def set_citation_ddl_mode(cursor, mode):
+    try:
+        cursor.execute("SET SESSION sql_mode=%s", (mode,))
+    except mysql.connector.Error as exc:
+        # MySQL 8 applies SET, then emits this deprecation warning; the connector
+        # raises warnings as errors. Only this known warning may be ignored.
+        if exc.errno != 3135:
+            raise
+
+
+def write_citation_counts(cursor, citations):
+    for cited_id, citing_ids in citations.items():
+        # Normalize again so direct callers cannot count duplicate links.
+        count = len(normalize_pmids(citing_ids))
+        cursor.execute("""
+            UPDATE publications
+            SET citation=%s, citation_source=%s, citation_checked_at=UTC_TIMESTAMP(6)
+            WHERE id=%s
+        """, (count, CITATION_SOURCE, cited_id))
+        if cursor.rowcount == 0:
+            cursor.execute("SELECT id FROM publications WHERE id=%s", (cited_id,))
+            if cursor.fetchone() is None:
+                raise UpdateError("Missing metadata for PMID %s; retrieve known_articles first" % cited_id)
+
+
+def getCitationCountPMIDs(conn):
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM publications ORDER BY id")
+        return normalize_pmids(row[0] for row in cursor.fetchall())
+    finally:
+        cursor.close()
+
+
+def fetch_verified_citations(client, pmids, include_metadata=False):
+    # ELink can return an empty LinkSet for an invalid PMID. ESummary establishes
+    # that each source exists before an empty citation list can become zero.
+    articles = client.fetch("citing_articles", pmids)
+    valid = list(articles)
+    citations = client.fetch("known_citations", valid) if valid else {}
+    return CitationBatch(citations, articles.unavailable,
+                         articles if include_metadata else None)
+
+
+def upgrade_citation_checkpoint(state, checkpoint, stages):
+    """Keep metadata progress, but replay citation writes under the new meaning."""
+    if state.get("version") != 1:
+        raise UpdateError("Unsupported publication checkpoint version")
+    legacy_stages = list(LEGACY_STAGES) if stages == STAGES else [stages[0]]
+    if state.get("stages") != legacy_stages:
+        raise UpdateError("Checkpoint belongs to another workflow; use its original configuration")
+    index = state.get("stage_index")
+    if not isinstance(index, int) or not 0 <= index <= len(legacy_stages):
+        raise UpdateError("Invalid legacy checkpoint stage index")
+    if "known_citations" in legacy_stages and index >= legacy_stages.index("known_citations"):
+        index = legacy_stages.index("known_citations")
+        state["work"] = None
+    state.update(version=CHECKPOINT_VERSION, stages=list(stages), stage_index=index)
+    checkpoint.save(state)
+    LOG.info("Upgraded citation checkpoint; metadata progress retained and incoming counts will be refreshed")
+    return state
+
+
 class Runner:
     def __init__(self, conn, client, checkpoint, identity, stages=STAGES,
                  summary_batch=100, citation_batch=20, workers=4):
@@ -646,13 +786,17 @@ class Runner:
     def run(self):
         state = self.checkpoint.load()
         if state and not state.get("completed"):
-            if state.get("version") != 1 or state.get("identity") != self.identity or state.get("stages") != list(self.stages):
+            if state.get("identity") != self.identity:
+                raise UpdateError("Checkpoint belongs to another database/workflow; use its original configuration")
+            if state.get("version") == 1:
+                state = upgrade_citation_checkpoint(state, self.checkpoint, self.stages)
+            if state.get("version") != CHECKPOINT_VERSION or state.get("stages") != list(self.stages):
                 raise UpdateError("Checkpoint belongs to another database/workflow; use its original configuration")
             if not isinstance(state.get("stage_index"), int) or not 0 <= state["stage_index"] <= len(self.stages):
                 raise UpdateError("Invalid checkpoint stage index")
             LOG.info("Resuming checkpoint %s", self.checkpoint.path)
         else:
-            state = {"version": 1, "identity": self.identity, "stages": list(self.stages),
+            state = {"version": CHECKPOINT_VERSION, "identity": self.identity, "stages": list(self.stages),
                      "stage_index": 0, "known_loaded": False, "work": None, "completed": False,
                      "started_at": datetime.now().astimezone().isoformat()}
             self.checkpoint.save(state)
@@ -664,6 +808,18 @@ class Runner:
                 if stage == "citing_articles":
                     pmids = getCitingPMIDs(self.conn)
                     name = "citing"
+                    self.checkpoint.save_worklist(name, pmids)
+                elif stage == "citation_counts":
+                    pmids = getCitationCountPMIDs(self.conn)
+                    # Known papers already got their count and links in one transaction.
+                    # Other existing/new citing rows receive counts only, without growing
+                    # the citation graph or retrieving another generation of papers.
+                    if "known_citations" in self.stages and state["stage_index"] > self.stages.index("known_citations"):
+                        known = set(self.checkpoint.load_worklist("known"))
+                        pmids = [pmid for pmid in pmids if pmid not in known]
+                    unavailable = set(state["unavailable_articles"])
+                    pmids = [pmid for pmid in pmids if pmid not in unavailable]
+                    name = "counts"
                     self.checkpoint.save_worklist(name, pmids)
                 else:
                     name = "known"
@@ -695,23 +851,25 @@ class Runner:
 
     def run_stage(self, stage, state, pmids):
         work = state["work"]
-        batch_size = self.citation_batch if stage == "known_citations" else self.summary_batch
+        batch_size = self.citation_batch if stage in ("known_citations", "citation_counts") else self.summary_batch
         submit_index = work["next_index"]
         if submit_index == len(pmids):
             return
         executor = ThreadPoolExecutor(max_workers=self.workers)
         pending = deque()
         failed = True
-        unavailable_known = {pmid for pmid, detail in state.get("unavailable_articles", {}).items()
-                             if detail["stage"] == "known_articles"}
+        unavailable_known = set(state.get("unavailable_articles", {}))
         try:
             while submit_index < len(pmids) or pending:
                 while len(pending) < self.workers and submit_index < len(pmids):
                     end = min(submit_index + batch_size, len(pmids))
                     batch = pmids[submit_index:end]
-                    if stage == "known_citations":
+                    if stage in ("known_citations", "citation_counts"):
                         batch = [pmid for pmid in batch if pmid not in unavailable_known]
-                    future = executor.submit(self.client.fetch, stage, batch) if batch else executor.submit(dict)
+                    if batch and stage == "known_citations" and "known_articles" not in self.stages:
+                        future = executor.submit(fetch_verified_citations, self.client, batch, True)
+                    else:
+                        future = executor.submit(self.client.fetch, stage, batch) if batch else executor.submit(dict)
                     pending.append((end, future))
                     submit_index = end
                 end, future = pending.popleft()
