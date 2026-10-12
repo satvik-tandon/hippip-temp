@@ -1,0 +1,124 @@
+# Repository scope: db_pred and its shared code/configuration dependencies.
+# Ignore everything by default; extend this allowlist when adding workflow code.
+*
+!/.gitignore
+!/requirements.txt
+!/update_db_pred.sh
+
+# Database schema and interaction sources used by db_pred/1_main.sh.
+!/config/
+!/config/dbstructure.sql
+!/config/interaction_sources_pred.json
+
+# Main-stage imports: keep Perl modules as well as Python and shell scripts.
+!/scripts/
+!/scripts/Cross/
+!/scripts/Cross/Ensembl/
+!/scripts/Cross/Ensembl/*.pl
+!/scripts/Cross/HPRD/
+!/scripts/Cross/HPRD/*.pl
+!/scripts/Cross/Uniprot/
+!/scripts/Cross/Uniprot/*.pl
+!/scripts/Genes/
+!/scripts/Genes/*.pl
+!/scripts/GO/
+!/scripts/GO/*.pl
+!/scripts/GO/*.py
+!/scripts/GWAS/
+!/scripts/GWAS/*.pl
+!/scripts/Pathways/
+!/scripts/Pathways/*.pl
+!/scripts/psimi-ontology/
+!/scripts/psimi-ontology/*.pl
+!/scripts/Drugs/
+!/scripts/Drugs/Drugbank/
+!/scripts/Drugs/Drugbank/*.pl
+!/scripts/Drugs/Drugbank/*.pm
+!/scripts/Drugs/Drugbank/*.py
+!/scripts/pdb/
+!/scripts/pdb/*.py
+!/scripts/kegg/
+!/scripts/kegg/*.py
+!/scripts/Interactions/
+!/scripts/Interactions/*.py
+!/scripts/go-enrichment/
+!/scripts/go-enrichment/*.py
+
+# Publication and shortest-path runners shared by the db_pred launchers.
+!/scripts/publication/
+!/scripts/publication/*.py
+!/scripts/shortest_paths/
+!/scripts/shortest_paths/*.py
+
+# Only the db_pred launchers; leave db_published and db_k_graph out of this repo.
+!/severus_prod/
+!/severus_prod/db_pred/
+!/severus_prod/db_pred/*.sh
+
+# Validation code and the prepared db_pred encoding migration.
+!/severus_prod/tests/
+!/severus_prod/tests/*.py
+!/severus_prod/migrations/
+!/severus_prod/migrations/utf8mb4_db_pred*.sql
+
+# Credentials and private local settings must stay ignored even in allowed paths.
+.env
+.env.*
+.ncbi_api_key
+cred.txt
+credentials*
+prod.txt
+.my.cnf
+*.pem
+*.key
+*.p12
+*.pfx
+.aws/
+.codex/
+.agents/
+
+# Backups and superseded source copies.
+backup/
+backups/
+backup_*/
+backup*.py
+*_backup.py
+*.bak
+*.old
+*.orig
+*.org
+*~
+
+# Runtime checkpoints, logs, downloaded datasets, and generated reports.
+publication_state/
+publication_diagnostics/
+rawfiles/
+logs/
+*.log
+*.err
+*.out
+*.part
+*.part.*
+*.gz
+*.zip
+*.tar
+*.tgz
+*.bz2
+*.xz
+
+# Python bytecode, environments, and editor/tool caches.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.coverage
+htmlcov/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
