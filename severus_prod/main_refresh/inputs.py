@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import zipfile
+import zlib
 
 from model import RefreshError, qualified
 
@@ -59,32 +60,60 @@ def source_urls(launcher):
             if (match := re.match(r'\s*"([^"]+)"', line))]
 
 
-# satvvik: Validate each temporary download before replacing a complete cached file.
+# satvvik: Validate archive contents as well as successful transfer and nonempty size.
+def validate_download(path, suffix):
+    path = Path(path)
+    if not path.stat().st_size:
+        raise RefreshError('Empty download: ' + path.name)
+    if suffix == '.gz':
+        result = subprocess.run(['gzip', '-t', str(path)], stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True)
+        if result.returncode:
+            detail = result.stderr.strip() or 'gzip validation failed'
+            raise RefreshError(detail)
+    elif suffix == '.zip':
+        try:
+            with zipfile.ZipFile(path) as archive:
+                bad_member = archive.testzip()
+                if bad_member:
+                    raise RefreshError('Corrupt ZIP member: ' + bad_member)
+        except (zipfile.BadZipFile, EOFError, zlib.error, RuntimeError) as error:
+            raise RefreshError('Invalid ZIP archive: ' + str(error)) from error
+
+
+# satvvik: Retry failed validation too; retain cached files until a verified replacement is ready.
 def atomic_download(url, target, force=False):
     target = Path(target)
-    if target.is_file() and target.stat().st_size and not force:
-        if target.suffix == '.gz':
-            subprocess.run(['gzip', '-t', str(target)], check=True)
-        elif target.suffix == '.zip':
-            with zipfile.ZipFile(target) as archive:
-                if archive.testzip():
-                    raise RefreshError('Corrupt cached ZIP: ' + str(target))
-        return
-    descriptor, temporary = tempfile.mkstemp(prefix=target.name + '.part-', dir=str(target.parent))
-    os.close(descriptor)
-    try:
-        subprocess.run(['wget', '--tries=3', '--timeout=60', '-nv', '-O', temporary, url], check=True)
-        if not Path(temporary).stat().st_size:
-            raise RefreshError('Empty download: ' + target.name)
-        if target.suffix == '.gz':
-            subprocess.run(['gzip', '-t', temporary], check=True)
-        elif target.suffix == '.zip':
-            with zipfile.ZipFile(temporary) as archive:
-                if archive.testzip():
-                    raise RefreshError('Corrupt ZIP download: ' + target.name)
-        os.replace(temporary, target)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
+    if target.is_file() and not force:
+        try:
+            validate_download(target, target.suffix)
+        except RefreshError as error:
+            LOG.warning('Cached %s failed validation (%s); downloading a fresh copy', target.name, error)
+        else:
+            LOG.info('Reusing validated %s', target.name)
+            return
+    attempts = 3
+    for attempt in range(1, attempts + 1):
+        descriptor, temporary = tempfile.mkstemp(prefix=target.name + '.part-', dir=str(target.parent))
+        os.close(descriptor)
+        try:
+            LOG.info('Downloading %s: attempt %d/%d', target.name, attempt, attempts)
+            subprocess.run(['wget', '--tries=3', '--timeout=60', '--no-cache', '-nv',
+                            '-O', temporary, url], check=True)
+            LOG.info('Validating downloaded %s', target.name)
+            validate_download(temporary, target.suffix)
+            os.replace(temporary, target)
+            return
+        except (subprocess.CalledProcessError, RefreshError) as error:
+            if attempt == attempts:
+                raise RefreshError('Could not download a valid ' + target.name + ' after '
+                                   + str(attempts) + ' attempts: ' + str(error)) from error
+            delay = 2.0 ** attempt
+            LOG.warning('%s: download or validation failed (%s); retry %d/%d in %.1fs',
+                        target.name, error, attempt + 1, attempts, delay)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+        time.sleep(delay)
 
 
 def prepare_downloads(launcher, rawfiles, force=False):

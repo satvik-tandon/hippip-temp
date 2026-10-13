@@ -258,9 +258,13 @@ ln -snf "$RAWFILES" /data01/backup/rawfiles/latest
 #XXXMadhavi
 #Note new link to goa_human
 SOURCE_FILES=(
-    "ftp://ftp.ncbi.nih.gov/gene/DATA/gene_info.gz"
-    "ftp://ftp.ncbi.nih.gov/gene/DATA/gene2go.gz"
-    "ftp://ftp.ncbi.nih.gov/gene/DATA/gene2ensembl.gz"
+    # satvvik: Use HTTPS for NCBI Gene files; retain the original FTP URLs for reference.
+    # "ftp://ftp.ncbi.nih.gov/gene/DATA/gene_info.gz"
+    "https://ftp.ncbi.nlm.nih.gov/gene/DATA/gene_info.gz"
+    # "ftp://ftp.ncbi.nih.gov/gene/DATA/gene2go.gz"
+    "https://ftp.ncbi.nlm.nih.gov/gene/DATA/gene2go.gz"
+    # "ftp://ftp.ncbi.nih.gov/gene/DATA/gene2ensembl.gz"
+    "https://ftp.ncbi.nlm.nih.gov/gene/DATA/gene2ensembl.gz"
     "ftp://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/idmapping/by_organism/HUMAN_9606_idmapping.dat.gz"
     "http://www.reactome.org/download/current/UniProt2Reactome.txt"
     "http://thebiogrid.org/downloads/archives/Latest%20Release/BIOGRID-ALL-LATEST.mitab.zip"
